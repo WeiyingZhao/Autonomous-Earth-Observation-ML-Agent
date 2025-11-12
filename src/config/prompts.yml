@@ -1,0 +1,417 @@
+# Planning prompts for ML Agent
+# Based on specifications from readme.md
+
+method_extraction:
+  name: "Method Extraction from Paper"
+  description: "Extract methodology from EO ML research paper"
+  prompt: |
+    You are an EO ML research assistant. From the METHODS and EXPERIMENTS sections, extract:
+    - Task type (classification, segmentation, detection, regression, etc.)
+    - Input modality (optical, SAR, multispectral, hyperspectral, etc.)
+    - Resolution (spatial resolution in meters, GSD)
+    - Model components (architecture, backbone, heads, etc.)
+    - Loss functions (cross-entropy, dice, focal loss, etc.)
+    - Hyperparameters (learning rate, batch size, epochs, optimizer, etc.)
+    - Training tricks (augmentations, regularization, scheduling, etc.)
+    - Dataset names (explicit dataset citations)
+    - Metrics (accuracy, mIoU, F1, AP, mAP, etc.)
+
+    Return a JSON conforming to the PaperSpec schema:
+    {{
+      "title": "paper title",
+      "tasks": ["semantic_segmentation"],
+      "sensors": ["Sentinel-2", "SAR(S1)"],
+      "data_requirements": {{
+        "bands": ["B02", "B03", "B04", "B08"],
+        "gsd_m": 10,
+        "patch_size": 256,
+        "seasons": ["summer", "winter"]
+      }},
+      "method": {{
+        "model_family": "U-Net",
+        "backbone": "ResNet50",
+        "losses": ["cross_entropy", "dice"],
+        "augmentations": ["flip", "rotate", "color_jitter"],
+        "learning_rate": 0.001,
+        "batch_size": 16,
+        "epochs": 100
+      }},
+      "metrics": ["miou", "f1", "overall_accuracy"],
+      "baselines": ["DeepLabV3+", "FCN"],
+      "datasets_mentioned": ["BigEarthNet", "Sentinel-2"]
+    }}
+
+    If information is missing, use reasonable defaults and note them in a "missing_info" field.
+
+dataset_resolver:
+  name: "Dataset Resolver"
+  description: "Find best open dataset match for paper requirements"
+  prompt: |
+    Given the following PaperSpec:
+    {paper_spec}
+
+    List up to 3 open datasets that match:
+    - Task type: {task_type}
+    - Modality: {modality}
+    - Resolution: {resolution_m} meters
+    - Label type: {label_type}
+
+    For each dataset, provide:
+    1. source: "huggingface" | "radiant_mlhub" | "kaggle" | "torchgeo" | "custom"
+    2. dataset_id: The identifier to load the dataset
+    3. license: License type (must be open for research)
+    4. approximate size: In GB
+    5. splits: {{train: X, val: Y, test: Z}}
+    6. loader_suggestion: How to load (e.g., "torchgeo.datasets.BigEarthNet")
+    7. match_quality: Score 0-100 indicating how well it matches requirements
+
+    Choose the best one and explain the tradeoffs in 3 sentences.
+    Consider:
+    - Exact task match vs closest alternative
+    - Sensor/modality compatibility
+    - Resolution similarity (±2-5× acceptable)
+    - Label granularity and format
+    - Dataset quality and size
+    - Community adoption and documentation
+
+    Return JSON format:
+    {{
+      "recommended": {{
+        "name": "BigEarthNet",
+        "source": "torchgeo",
+        "match_quality": 95,
+        "rationale": "Exact Sentinel-2 match..."
+      }},
+      "alternatives": [...]
+    }}
+
+code_synthesis:
+  name: "Code Synthesis"
+  description: "Generate PyTorch Lightning code for the task"
+  prompt: |
+    Generate PyTorch Lightning code for the following task:
+
+    Task: {task_type}
+    Dataset: {dataset_name}
+    Model: {model_architecture}
+    Framework: PyTorch Lightning + TorchGeo
+
+    Include:
+    1. DataModule adapter (PyTorch Lightning DataModule)
+       - Handles multispectral bands: {bands}
+       - Patch size: {patch_size}
+       - Augmentations: {augmentations}
+
+    2. Model implementation
+       - Architecture: {model_architecture}
+       - Backbone: {backbone}
+       - Handle N-band input (use BandMapper for bands ≠ 3)
+       - Loss functions: {losses}
+
+    3. Training script (scripts/train.py)
+       - CLI using argparse or hydra
+       - Config loading from YAML
+       - Logging to TensorBoard/WandB
+       - Checkpointing best model
+
+    4. Evaluation script (scripts/evaluate.py)
+       - Load checkpoint
+       - Compute metrics: {metrics}
+       - Generate confusion matrix
+       - Visualize predictions
+
+    5. Config YAML (configs/default.yaml)
+       - All hyperparameters
+       - Dataset paths
+       - Model settings
+       - Training settings
+
+    6. Three pytest tests:
+       - test_dataloader_shapes: Check output shapes
+       - test_model_forward: Single batch forward pass
+       - test_overfit_batch: Overfit on small batch
+
+    Project structure:
+    ```
+    project/
+      src/
+        data/dataset.py
+        models/model.py
+        tasks/train_module.py
+      scripts/
+        train.py
+        evaluate.py
+      configs/
+        default.yaml
+      tests/
+        test_data.py
+        test_model.py
+      pyproject.toml
+      Dockerfile
+    ```
+
+    Avoid external private repositories. Use only public libraries.
+    Ensure proper error handling and input validation.
+
+deviation_explainer:
+  name: "Deviation Explainer"
+  description: "Explain differences from original paper"
+  prompt: |
+    Compare the implementation with the original paper:
+
+    Original paper requirements:
+    {paper_spec}
+
+    Actual implementation:
+    {implementation_details}
+
+    If the paper uses private data or undisclosed hyperparameters, propose principled defaults.
+    List all deviations in a "Differences from Original" table with columns:
+    - Aspect (e.g., "Dataset", "Batch Size", "Backbone")
+    - Original Paper
+    - Our Implementation
+    - Rationale
+
+    For each deviation, provide scientific justification from literature or common practice.
+    Rate the impact of each deviation: HIGH, MEDIUM, LOW
+
+method_planner:
+  name: "Method Planner"
+  description: "Decompose paper's algorithm to modules and dependencies"
+  prompt: |
+    Given the paper's method section:
+    {method_description}
+
+    Decompose the algorithm into:
+    1. Core modules (e.g., encoder, decoder, attention mechanism)
+    2. Dependencies between modules (what feeds into what)
+    3. External library requirements (PyTorch, torchgeo, albumentations, etc.)
+    4. Custom implementations needed (novel layers, losses, metrics)
+
+    Return a structured plan:
+    {{
+      "modules": [
+        {{
+          "name": "Encoder",
+          "type": "ResNet50",
+          "implementation": "torchvision.models.resnet50",
+          "custom_modifications": ["Replace first conv for N-band input"]
+        }},
+        ...
+      ],
+      "dependencies": [
+        {{"from": "Encoder", "to": "Decoder", "data": "feature_maps"}},
+        ...
+      ],
+      "libraries": [
+        "torch>=2.0.0",
+        "pytorch-lightning>=2.0.0",
+        ...
+      ],
+      "custom_code": [
+        "MultispectralBandMapper",
+        "OrientedBBoxLoss"
+      ]
+    }}
+
+repo_resolver:
+  name: "Repo Resolver"
+  description: "Find official or related code repositories"
+  prompt: |
+    Search for official or related code for the paper:
+    Title: {paper_title}
+    Authors: {authors}
+    Venue: {venue}
+    Year: {year}
+
+    Search strategies:
+    1. Check paper's official links (GitHub badge, code availability statement)
+    2. Search GitHub: "{paper_title} {first_author}"
+    3. Check author GitHub profiles
+    4. Search Papers With Code: https://paperswithcode.com
+    5. Check conference/journal supplementary materials
+
+    For each repository found, assess:
+    - Is it official (from paper authors)?
+    - Code quality (stars, issues, documentation)
+    - License (must be open source)
+    - Completeness (training code, model weights, configs)
+    - Last update date
+    - Match with paper (same architecture, same experiments)
+
+    Return:
+    {{
+      "official_repo": "https://github.com/...",
+      "quality_score": 85,
+      "can_use": true,
+      "issues": ["Missing dataset loader", "Outdated dependencies"],
+      "adaptation_needed": ["Update to PyTorch 2.0", "Add config system"]
+    }}
+
+    If no good repo found, return:
+    {{
+      "official_repo": null,
+      "can_use": false,
+      "recommendation": "Implement from scratch using paper description"
+    }}
+
+environment_builder:
+  name: "Environment Builder"
+  description: "Generate Dockerfile and dependency specifications"
+  prompt: |
+    Create a reproducible environment for:
+    Framework: PyTorch Lightning
+    CUDA Version: {cuda_version}
+    Python Version: 3.10
+
+    Key dependencies:
+    {dependencies}
+
+    Generate:
+    1. Dockerfile with CUDA base image
+    2. requirements.txt with pinned versions
+    3. conda environment.yml (optional)
+    4. .dockerignore
+
+    Security requirements:
+    - Run as non-root user
+    - No privileged operations
+    - Network egress allowlist for data hosts
+    - Scan with bandit and pip-audit
+
+    Reproducibility requirements:
+    - Pin all versions
+    - Set PYTHONHASHSEED
+    - Configure torch.backends for determinism
+    - Document hardware requirements
+
+evaluation_protocol:
+  name: "Evaluation Protocol"
+  description: "Define evaluation protocol for the task"
+  prompt: |
+    Define evaluation protocol for:
+    Task: {task_type}
+    Dataset: {dataset_name}
+    Metrics: {metrics}
+
+    Specify:
+    1. Data splits (train/val/test ratios or author splits)
+    2. Primary metrics and how to compute them
+    3. Secondary metrics for deeper analysis
+    4. Visualization requirements (confusion matrix, PR curves, sample predictions)
+    5. Statistical significance tests (if applicable)
+    6. Ablation studies (optional)
+
+    For segmentation:
+    - mIoU (mean and per-class)
+    - Boundary F1 score
+    - Class frequency weighting
+    - Geographic split to avoid leakage
+
+    For detection:
+    - mAP@[.5:.95]
+    - Per-class AP
+    - Oriented IoU for OBB
+    - NMS settings
+
+    For classification:
+    - Overall accuracy
+    - Per-class precision/recall/F1
+    - Macro and micro averages
+    - Confusion matrix
+
+    Return structured protocol with code snippets.
+
+report_generator:
+  name: "Report Generator"
+  description: "Generate reproducibility report and Repro Card"
+  prompt: |
+    Generate a comprehensive reproducibility report for:
+
+    Paper: {paper_title}
+    Implementation: {implementation_summary}
+    Results: {results}
+
+    Report structure:
+
+    # Reproducibility Report: {paper_title}
+
+    ## Executive Summary
+    - Task and goal
+    - Key findings
+    - Reproduction quality (exact, close, partial)
+
+    ## Method Summary
+    - Brief recap of paper's approach
+    - Key innovations
+    - Architecture diagram (if applicable)
+
+    ## Dataset
+    - Dataset used (original or substitute)
+    - Statistics (size, classes, resolution, etc.)
+    - Preprocessing steps
+    - Splits used
+
+    ## Implementation Details
+    - Framework and libraries
+    - Model architecture
+    - Training configuration
+    - Compute resources
+
+    ## Deviations from Original
+    - Table of differences
+    - Impact assessment
+    - Justifications
+
+    ## Results
+    - Metrics table comparing paper vs our reproduction
+    - Learning curves
+    - Confusion matrix / PR curves
+    - Qualitative examples (best and worst predictions)
+
+    ## Error Analysis
+    - Common failure modes
+    - Per-class performance
+    - Geographic or domain-specific patterns
+
+    ## Reproducibility Card
+    - Exact commands to reproduce
+    - Hardware used
+    - Runtime and cost
+    - Random seeds
+    - Licenses and citations
+    - Known limitations
+
+    ## Conclusion
+    - Summary of reproduction quality
+    - Lessons learned
+    - Future improvements
+
+    Format: Markdown with embedded tables, code blocks, and (optional) images.
+
+sanity_check:
+  name: "Sanity Check Protocol"
+  description: "Quick validation before full training"
+  prompt: |
+    Define sanity checks for:
+    Task: {task_type}
+    Model: {model_architecture}
+    Dataset: {dataset_name}
+
+    Checks to perform:
+    1. Overfit on single batch (loss should go to near-zero)
+    2. Forward pass shape validation
+    3. Gradient flow check (no vanishing/exploding)
+    4. Memory profiling (estimate batch size limits)
+    5. Data augmentation visualization
+    6. Label distribution analysis
+    7. Quick 1-epoch run (end-to-end pipeline)
+
+    Success criteria:
+    - Single batch overfit: loss < 0.01 within 100 steps
+    - Shapes: all outputs match expected dimensions
+    - Gradients: all parameters receive gradients
+    - Memory: batch size fits in GPU memory with margin
+    - Data: augmentations applied correctly, no NaN/Inf
+
+    Return executable Python code for each check.
