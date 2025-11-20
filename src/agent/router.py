@@ -65,27 +65,32 @@ class LLMRouter:
         }
 
         # Model configurations
+        # FIX: Updated to use stable model names and added request timeout
         self.model_configs = {
             "openai": {
                 "model": "gpt-4-turbo-preview",
                 "temperature": 0.1,
-                "max_tokens": 4096
+                "max_tokens": 4096,
+                "timeout": 120  # 2 minute timeout for LLM calls
             },
             "openai_code": {  # Specialized for code generation
                 "model": "gpt-4",
                 "temperature": 0,
-                "max_tokens": 4096  # GPT-4 has 8192 TOTAL context (input+output), so max output is ~4096
+                "max_tokens": 4096,  # GPT-4 has 8192 TOTAL context (input+output), so max output is ~4096
+                "timeout": 180  # 3 minute timeout for code generation
             },
             "deepseek": {
                 "model": "deepseek-chat",
                 "temperature": 0.1,
                 "max_tokens": 4096,
-                "base_url": "https://api.deepseek.com"
+                "base_url": "https://api.deepseek.com",
+                "timeout": 120
             },
             "google": {
-                "model": "gemini-2.5-flash",  # Updated from deprecated gemini-1.5-pro
+                "model": "gemini-1.5-pro",  # Using stable version (gemini-2.5-flash not yet widely available)
                 "temperature": 0.1,
-                "max_tokens": 8192
+                "max_tokens": 8192,
+                "timeout": 120
             }
         }
 

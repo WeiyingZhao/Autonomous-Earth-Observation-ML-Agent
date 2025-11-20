@@ -16,6 +16,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.agent.graph import create_ml_agent_graph
 from src.agent.state import AgentState, init_phase_tracking
 from src.agent.router import init_router
+# FIX: Added input validation for robustness
+from src.utils.validation import validate_cli_args, ValidationError
 
 
 def setup_environment():
@@ -232,16 +234,26 @@ Examples:
 
     args = parser.parse_args()
 
+    # FIX: Validate inputs before proceeding
+    try:
+        validated = validate_cli_args(args)
+        print(f"✓ Input validation passed")
+        print(f"  Paper: {validated['paper_uri']}")
+        print(f"  Type: {validated['paper_uri_type']}")
+    except ValidationError as e:
+        print(f"\n❌ Invalid input: {e}")
+        sys.exit(1)
+
     # Setup environment
     setup_environment()
 
-    # Run agent
+    # Run agent with validated inputs
     result = run_agent(
-        paper_uri=args.paper,
-        task_hint=args.task,
-        max_gpu_hours=args.gpu_hours,
-        target_sensors=args.sensors,
-        output_dir=args.output_dir
+        paper_uri=validated["paper_uri"],
+        task_hint=validated["task_hint"],
+        max_gpu_hours=validated["max_gpu_hours"],
+        target_sensors=validated["target_sensors"],
+        output_dir=validated["output_dir"]
     )
 
     # Exit with appropriate code

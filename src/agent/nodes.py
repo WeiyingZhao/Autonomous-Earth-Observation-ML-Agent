@@ -137,8 +137,9 @@ def resolve_dataset_node(state: AgentState) -> AgentState:
 
         # Resolve dataset
         resolver = DatasetResolver(llm=llm)
+        # FIX: Use model_dump() instead of deprecated dict() for Pydantic v2 compatibility
         result = resolver.resolve_dataset(
-            paper_spec=state.paper_spec.dict(),
+            paper_spec=state.paper_spec.model_dump(),
             use_llm=True,
             llm=llm
         )
@@ -211,9 +212,10 @@ def synthesize_code_node(state: AgentState) -> AgentState:
         # Try code synthesis with primary model
         try:
             synthesizer = CodeSynthesizer(llm=llm)
+            # FIX: Use model_dump() instead of deprecated dict() for Pydantic v2 compatibility
             result = synthesizer.synthesize_project(
-                paper_spec=state.paper_spec.dict(),
-                dataset_info=state.dataset_info.dict(),
+                paper_spec=state.paper_spec.model_dump(),
+                dataset_info=state.dataset_info.model_dump(),
                 output_dir=project_dir,
                 llm=llm
             )
@@ -229,9 +231,10 @@ def synthesize_code_node(state: AgentState) -> AgentState:
                 # Retry with Gemini
                 llm = router.get_model("general")  # Use general model which is Google
                 synthesizer = CodeSynthesizer(llm=llm)
+                # FIX: Use model_dump() for Pydantic v2 compatibility
                 result = synthesizer.synthesize_project(
-                    paper_spec=state.paper_spec.dict(),
-                    dataset_info=state.dataset_info.dict(),
+                    paper_spec=state.paper_spec.model_dump(),
+                    dataset_info=state.dataset_info.model_dump(),
                     output_dir=project_dir,
                     llm=llm
                 )
